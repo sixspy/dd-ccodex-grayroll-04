@@ -4,20 +4,23 @@
     "code": "beta_internal",
     "title": "内部体验",
     "member_count": 3,
-    "note": "员工白名单"
+    "note": "员工白名单",
+    "mutex_group": "seg_growth"
   },
   {
     "id": 2,
     "code": "city_hz",
     "title": "杭州试点",
     "member_count": 2,
-    "note": "地域试点"
+    "note": "地域试点",
+    "mutex_group": ""
   },
   {
     "id": 3,
     "code": "vip_early",
     "title": "早鸟会员",
     "member_count": 2,
-    "note": "会员早鸟"
+    "note": "会员早鸟",
+    "mutex_group": "seg_growth"
   }
 ]

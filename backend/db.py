@@ -50,13 +50,22 @@ CREATE TABLE IF NOT EXISTS cohorts(
   code TEXT UNIQUE NOT NULL,
   title TEXT NOT NULL,
   member_count INTEGER NOT NULL DEFAULT 0,
-  note TEXT NOT NULL DEFAULT ''
+  note TEXT NOT NULL DEFAULT '',
+  mutex_group TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS cohort_members(
   id INTEGER PRIMARY KEY,
   cohort_id INTEGER NOT NULL REFERENCES cohorts(id),
   subject_key TEXT NOT NULL,
   UNIQUE(cohort_id, subject_key)
+);
+CREATE TABLE IF NOT EXISTS cohort_member_shadows(
+  id INTEGER PRIMARY KEY,
+  cohort_id INTEGER NOT NULL REFERENCES cohorts(id),
+  subject_key TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  created_by TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS flag_rules(
   id INTEGER PRIMARY KEY,
@@ -204,8 +213,8 @@ def seed(conn: sqlite3.Connection) -> None:
         )
     for c in _load("cohorts.json"):
         conn.execute(
-            "INSERT INTO cohorts(id, code, title, member_count, note) VALUES(?,?,?,?,?)",
-            (c["id"], c["code"], c["title"], c["member_count"], c.get("note", "")),
+            "INSERT INTO cohorts(id, code, title, member_count, note, mutex_group) VALUES(?,?,?,?,?,?)",
+            (c["id"], c["code"], c["title"], c["member_count"], c.get("note", ""), c.get("mutex_group", "")),
         )
     for m in _load("cohort_members.json"):
         conn.execute(
@@ -279,8 +288,20 @@ def seed(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT INTO experiment_bridge_stub(id, note) VALUES(1, ?)", ("实验平台桥接空桩未接通",))
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """既有库结构迁移与种子互斥组回填（幂等）。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(cohorts)")}
+    if "mutex_group" not in cols:
+        conn.execute("ALTER TABLE cohorts ADD COLUMN mutex_group TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        "UPDATE cohorts SET mutex_group='seg_growth' "
+        "WHERE code IN ('beta_internal','vip_early') AND mutex_group=''"
+    )
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         seed(conn)
         conn.commit()

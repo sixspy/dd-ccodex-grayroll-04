@@ -24,6 +24,11 @@ export const EvaluateView = {
       <div class="field"><label>主体键</label><input v-model="form.subject_key" /></div>
       <button class="btn" @click="run">求值</button>
       <div class="err" v-if="err">{{ err }}</div>
+      <div v-if="result && result.reason==='rule'" class="muted" style="margin-top:0.6rem">
+        账实联查：互斥组 {{ result.mutex_group || '—' }} ·
+        正式归属 {{ (result.official_mutex_cohorts || []).join('、') || '—' }} ·
+        {{ result.cohort_hit ? '命中单侧正式成员' : '未命中正式成员册（影子草案不计）' }}
+      </div>
       <pre v-if="result" style="margin-top:0.8rem">{{ result }}</pre>
     </div>
     <div class="panel span-7">

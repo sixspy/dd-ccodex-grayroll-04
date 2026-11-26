@@ -73,15 +73,46 @@ def evaluate(body: EvalIn, authorization: str | None = Header(default=None)):
                 "env_code": env_code,
                 "subject_key": subject,
             }
-        percent_hit = eval_percent(subject, int(rule["percent"]), flag_key)
-        cohort_hit = False
-        if rule["cohort_id"]:
-            cohort_hit = bool(
-                conn.execute(
-                    "SELECT 1 FROM cohort_members WHERE cohort_id=? AND subject_key=?",
-                    (rule["cohort_id"], subject),
+        # 账实联查：同一事务内跨表联查正式成员册；未升正的影子草案不计命中，
+        # 命中只对应单一人群成员（互斥组内正式归属唯一）。
+        conn.execute("BEGIN")
+        try:
+            percent_hit = eval_percent(subject, int(rule["percent"]), flag_key)
+            cohort_hit = False
+            mutex_group = ""
+            official_mutex_cohorts: list[str] = []
+            if rule["cohort_id"]:
+                cohort_hit = bool(
+                    conn.execute(
+                        """
+                        SELECT 1 FROM cohort_members cm
+                        JOIN cohorts c ON c.id = cm.cohort_id
+                        WHERE cm.cohort_id=? AND cm.subject_key=?
+                        """,
+                        (rule["cohort_id"], subject),
+                    ).fetchone()
+                )
+                rc = conn.execute(
+                    "SELECT mutex_group FROM cohorts WHERE id=?", (rule["cohort_id"],)
                 ).fetchone()
-            )
+                mutex_group = (rc["mutex_group"] if rc else "") or ""
+                if mutex_group:
+                    official_mutex_cohorts = [
+                        r["code"]
+                        for r in conn.execute(
+                            """
+                            SELECT c2.code FROM cohort_members cm2
+                            JOIN cohorts c2 ON c2.id = cm2.cohort_id
+                            WHERE cm2.subject_key=? AND c2.mutex_group=?
+                            ORDER BY c2.code
+                            """,
+                            (subject, mutex_group),
+                        ).fetchall()
+                    ]
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         enabled = combine_rule(rule["kind"], percent_hit, cohort_hit)
         return {
             "enabled": enabled,
@@ -90,6 +121,8 @@ def evaluate(body: EvalIn, authorization: str | None = Header(default=None)):
             "percent": rule["percent"],
             "percent_hit": percent_hit,
             "cohort_hit": cohort_hit,
+            "mutex_group": mutex_group,
+            "official_mutex_cohorts": official_mutex_cohorts,
             "version": rule["version"],
             "flag_key": flag_key,
             "env_code": env_code,
